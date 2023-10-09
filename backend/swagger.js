@@ -5,7 +5,7 @@ const swaggerDefinition = YAML.load('./backend/swagger.yaml'); // Load the YAML 
 
 const options = {
   swaggerDefinition,
-  apis: ['./backend/app.js', './backend/security.js'], // Path to the API route files
+  apis: ['./backend/app.js'], // Path to the API route files
 };
 
 const swaggerSpec = swaggerJSDoc(options);

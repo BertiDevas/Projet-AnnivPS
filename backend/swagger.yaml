@@ -12,9 +12,16 @@ components:
           type: string
         firstname:
           type: string
-        mdp:
+        mdpentered:
           type: string
         code:
           type: string
         confirmation:
           type: boolean
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - BearerAuth: []

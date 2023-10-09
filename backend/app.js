@@ -5,10 +5,14 @@ const jwt = require('jsonwebtoken');
 
 const db = require('./db_create.js');
 const swaggerSpec = require('./swagger');
-const {secretKey, verifyToken, checkCredentials} = require('./security');
+const {checkCredentials, verifyToken} = require('./security');
 
 const app = express();
 const port = 3000;
+const codeApp = '0000';
+const codeAdmin = '0001';
+const secretKey = 'mysecretkey';
+
 
 // Add middleware to serve Swagger UI at /api-docs
 app.use('/api-docs', checkCredentials, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
@@ -31,8 +35,10 @@ app.use(express.json());
  *             properties:
  *               lastname:
  *                 type: string
- *               mdp:
+ *                 default: Test
+ *               mdpentered:
  *                 type: string
+ *                 default: Test
  *     responses:
  *       200:
  *         description: User authenticated successfully
@@ -40,30 +46,46 @@ app.use(express.json());
  *         description: Authentication failed
  *       500:
  *         description: Error authenticating user
+ * 
+ * 
  */
 app.post('/authenticate-user', (req, res) => {
 
-   const { lastname, mdp } = req.body;
+   const { lastname, mdpentered } = req.body;
    // Retrieve the salt from the database for the user
-   db.get('SELECT Id, Salt, mdp FROM User WHERE lastname = ?', [lastname], (err, row) => {
+   db.get('SELECT Id, Salt, mdp, isAdmin FROM User WHERE lastname = ?', [lastname], (err, row) => {
       if (err) {
          console.error('Error retrieving user:', err.message);
          res.status(500).json({ message: 'Error authenticating user.' });
       } else if (row) {
-         const { Id, Salt, mdp: storedmdp } = row;
+         const { Id, Salt, mdp: storedmdp, isAdmin } = row;
 
          // Hash the entered password with the retrieved salt
-         const hashedmdp = crypto.createHash('sha256').update(mdp + Salt).digest('hex');
+         const hashedmdp = crypto.createHash('sha256').update(mdpentered + Salt).digest('hex');
 
          // Compare the hashed password with the stored hashed password
          if (hashedmdp === storedmdp) {
-           jwt.sign({ Id }, secretKey, (err, token) => {
-               if (err) {
-                 res.sendStatus(500);
-               } else {
-                  res.json({ authenticated: true, UserId: Id, token });
-               }
-           });
+
+          const payload = {
+            Id,
+          };
+          
+          // Define the payload for the JWT, including the admin claim
+          if (isAdmin) {
+            payload.isAdmin = true;
+          }
+          
+          // Sign the JWT with the secret key
+          jwt.sign(payload, secretKey, { expiresIn: '24h' }, (err, token) => {
+            if (err) {
+              res.sendStatus(500);
+            } else {
+              // Include the token in the 'Authorization' header of the response
+              res.setHeader('Authorization', `Bearer ${token}`);
+              res.json({ authenticated: true, UserId: Id });
+            }
+          });
+
          } else {
            res.json({ authenticated: false });
          }
@@ -73,7 +95,7 @@ app.post('/authenticate-user', (req, res) => {
    });
  });
 
-  /**
+/**
  * @swagger
  * /register-user:
  *   post:
@@ -89,12 +111,16 @@ app.post('/authenticate-user', (req, res) => {
  *             properties:
  *               firstname:
  *                 type: string
+ *                 default: Test
  *               lastname:
  *                 type: string
+ *                 default: Test
  *               mdp:
  *                 type: string
+ *                 default: Test
  *               code:
  *                 type: string
+ *                 default: '0001'
  *     responses:
  *       200:
  *         description: User registered successfully
@@ -105,9 +131,12 @@ app.post('/authenticate-user', (req, res) => {
  */
 app.post('/register-user', (req, res) => {
    const { lastname, firstname, mdp, code } = req.body; 
-   if (code != '0000') {
+   if (code !== codeApp & code !== codeAdmin) {
       res.status(400).json({ message: 'Invalid request data' });
       } else {
+
+        isAdmin = false;
+        if (code === codeAdmin) isAdmin = true;
          
          // Generate a unique salt for the user
          const salt = crypto.randomBytes(16).toString('hex');
@@ -117,8 +146,8 @@ app.post('/register-user', (req, res) => {
       
          // Insert the user into the User table
          db.run(
-         'INSERT INTO User (lastname, firstname, MdP, Confirmation, Salt) VALUES (?, ?, ?, ?, ?)',
-         [lastname, firstname, hashedMdP, salt],
+         'INSERT INTO User (lastname, firstname, MdP, Salt, isAdmin) VALUES (?, ?, ?, ?, ?)',
+         [lastname, firstname, hashedMdP, salt, isAdmin],
          (err) => {
             if (err) {
                console.error('Error registering user:', err.message);
@@ -131,56 +160,69 @@ app.post('/register-user', (req, res) => {
       }
  });
 
- // Define an API endpoint to update the Confirmation value for a user
- /**
+
+/**
  * @swagger
- * /update-confirmation/{userId}:
+ * /update-confirmation/{id}:
  *   put:
- *     summary: Update Confirmation value for a user
- *     description: Update the Confirmation value for a user by their user ID.
+ *     security:
+ *       - BearerAuth: []
+ *     summary: Update Confirmation value by user ID
+ *     description: Update the Confirmation value (true/false) for a user based on their ID.
  *     parameters:
- *       - name: userId
- *         in: path
- *         description: User ID to update Confirmation value.
+ *       - in: path
+ *         name: id
+ *         description: User ID
  *         required: true
  *         schema:
- *           type: string
- *       - name: Confirmation
- *         in: body
- *         description: Updated Confirmation value (null, true, or false).
- *         required: true
- *         schema:
- *           type: boolean
+ *         type: integer
+ *     requestBody:
+ *       description: Confirmation value to update (true/false)
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               Confirmation:
+ *                 type: boolean
  *     responses:
  *       200:
  *         description: Confirmation value updated successfully
- *       400:
- *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized (Invalid or missing token)
+ *       403:
+ *         description: Forbidden (Token is not valid)
  *       404:
  *         description: User not found
  *       500:
  *         description: Error updating Confirmation value
  */
-app.put('/update-confirmation/:userId', (req, res) => {
-   const { userId } = req.params;
-   const { Confirmation } = req.body;
- 
-   // Check if Confirmation is one of the allowed values (null, true, false)
-   if (Confirmation === true || Confirmation === false) {
-     // Update the Confirmation value in the User table
-     db.run('UPDATE User SET Confirmation = ? WHERE Id = ?', [Confirmation, userId], (err) => {
-       if (err) {
-         console.error('Error updating Confirmation:', err.message);
-         res.status(500).json({ message: 'Error updating Confirmation.' });
-       } else {
-         console.log('Confirmation updated successfully');
-         res.json({ message: 'Confirmation updated successfully' });
-       }
-     });
-   } else {
-     res.status(400).json({ message: 'Invalid Confirmation value. Allowed values are null, true, false.' });
-   }
- });
+
+app.put('/update-confirmation/:id', verifyToken, (req, res) => {
+  const userId = req.params.id;
+  const { Confirmation } = req.body;
+
+  // Ensure that Confirmation is a boolean, true, false
+  if (Confirmation !== true && Confirmation !== false) {
+    return res.status(400).json({ message: 'Invalid Confirmation value' });
+  }
+
+  // Update the Confirmation value for the user based on the ID
+  db.run('UPDATE User SET Confirmation = ? WHERE Id = ?', [Confirmation, userId], (err) => {
+    if (err) {
+      console.error('Error updating Confirmation value:', err.message);
+      return res.status(500).json({ message: 'Error updating Confirmation value' });
+    }
+
+    if (this.changes === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Return a success message
+    res.json({ message: 'Confirmation value updated successfully' });
+  });
+});
 
 /**
  * @swagger
@@ -221,6 +263,51 @@ app.get('/get-all-users', (req, res) => {
    });
  });
 
+ // Define an endpoint to get user information by ID (requires JWT authentication)
+/**
+ * @swagger
+ * /user/{id}:
+ *   get:
+ *     summary: Get user information by ID
+ *     description: Retrieve user information based on the user's ID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         description: User ID
+ *         required: true
+ *         schema:
+ *         type: integer
+ *     responses:
+ *       200:
+ *         description: User information retrieved successfully
+ *       401:
+ *         description: Unauthorized (Invalid or missing token)
+ *       403:
+ *         description: Forbidden (Token is not valid)
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Error retrieving user information
+ */
+app.get('/user/:id', (req, res) => {
+  const userId = req.params.id;
+
+  // Query the database to retrieve user information based on the ID
+  db.get('SELECT Id, firstname, lastname FROM User WHERE Id = ?', [userId], (err, row) => {
+    if (err) {
+      console.error('Error retrieving user information:', err.message);
+      return res.status(500).json({ message: 'Error retrieving user information' });
+    }
+
+    if (!row) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Return the user information as a JSON response
+    res.json(row);
+  });
+});
+
  app.get('/', (req, res) => {
    res.send('>:(');
  });
@@ -229,5 +316,3 @@ app.get('/get-all-users', (req, res) => {
  app.listen(port, () => {
    console.log(`Server is running on port ${port}`);
  });
-
-module.exports = app;

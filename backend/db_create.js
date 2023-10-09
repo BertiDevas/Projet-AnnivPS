@@ -14,6 +14,7 @@ const db = new sqlite3.Database('db.sql', (err) => {
       firstname TEXT,
       mdp TEXT,
       confirmation TEXT Null,
+      isAdmin TEXT false,
       Salt TEXT
     )`, (err) => {
       if (err) {
