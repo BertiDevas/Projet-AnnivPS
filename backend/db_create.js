@@ -23,7 +23,7 @@ const db = new sqlite3.Database('db.sql', (err) => {
         console.log('User table created.');
         
         // Create the UserInfo table
-        db.run(`CREATE TABLE IF NOT EXISTS UserInfo (
+        db.run(`CREATE TABLE IF NOT EXISTS userAddedMembers (
           Id INTEGER PRIMARY KEY AUTOINCREMENT,
           UserId TEXT,
           lastname TEXT,
@@ -38,13 +38,6 @@ const db = new sqlite3.Database('db.sql', (err) => {
         });
       }
     });
-
-    db.all('SELECT * FROM User', [], (err, rows) => {
-      if (err) {
-        throw err;
-      }
-      rows.forEach((row) => console.log(row))
-    })
   }
 });
 
