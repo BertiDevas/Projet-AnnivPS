@@ -2,10 +2,13 @@ const express = require('express');
 const swaggerUi = require('swagger-ui-express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path')
 
 const db = require('./db_create.js');
 const swaggerSpec = require('./swagger');
 const {checkCredentials, verifyToken} = require('./security');
+const {upload, dir, mime} = require('./gestion_photo.js');
 
 const app = express();
 const port = 3000;
@@ -160,18 +163,225 @@ app.post('/register-user', (req, res) => {
       }
  });
 
+/**
+ * @swagger
+ * /get-all-users:
+ *   get:
+ *     summary: Get all users' firstname and lastname
+ *     description: Retrieve the firstname, lastname, id, and confirmation of all users from the database.
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved user data.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                     description: The user's id.
+ *                     example: 1
+ *                   firstname:
+ *                     type: string
+ *                     description: The user's firstname.
+ *                     example: John
+ *                   lastname:
+ *                     type: string
+ *                     description: The user's lastname.
+ *                     example: Smith
+ *                   confirmation:
+ *                     type: boolean
+ *                     description: The user's confirmation status.
+ *                     example: true
+ *       500:
+ *         description: Error fetching user data from the database.
+ */
+app.get('/get-all-users', verifyToken, (req, res) => {
+  // Query the database to retrieve all users' firstname, lastname, id, and confirmation
+  db.all('SELECT Id, firstname, lastname, confirmation FROM User', (err, rows) => {
+    if (err) {
+      console.error('Error fetching users:', err.message);
+      res.status(500).json({ message: 'Error fetching users.' });
+    } else {
+      // Extract the firstname, lastname, id, and confirmation from the query result
+      const users = rows.map((row) => ({ id: row.Id, firstname: row.firstname, lastname: row.lastname, confirmation: row.confirmation }));
+      res.json(users);
+    }
+  });
+});
 
 /**
  * @swagger
- * /update-confirmation/{id}:
+ * /user/{Id}:
+ *   get:
+ *     summary: Get user information with associated members
+ *     description: Retrieve user information along with associated members based on the user's ID.
+ *     parameters:
+ *       - in: path
+ *         name: Id
+ *         description: User ID
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Successfully retrieved user information with associated members.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                   description: The user's ID.
+ *                 firstname:
+ *                   type: string
+ *                   description: The user's first name.
+ *                 lastname:
+ *                   type: string
+ *                   description: The user's last name.
+ *                 confirmation:
+ *                   type: string
+ *                   description: The user's confirmation status.
+ *                 members:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         description: The member's ID.
+ *                       firstname:
+ *                         type: string
+ *                         description: The member's first name.
+ *                       lastname:
+ *                         type: string
+ *                         description: The member's last name.
+ *       404:
+ *         description: User not found.
+ *       500:
+ *         description: Error retrieving user information with associated members.
+ */
+app.get('/user/:Id', verifyToken, (req, res) => {
+  const userId = req.params.Id;
+
+  // Query the database to retrieve user information based on the ID
+  db.get('SELECT Id, firstname, lastname, confirmation FROM User WHERE Id = ?', [userId], (err, userRow) => {
+    if (err) {
+      console.error('Error retrieving user information:', err.message);
+      return res.status(500).json({ message: 'Error retrieving user information' });
+    }
+
+    if (!userRow) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Query the database to retrieve all members associated with the user
+    db.all('SELECT Id, lastname, firstname FROM userAddedMembers WHERE UserId = ?', [userId], (err, membersRows) => {
+      if (err) {
+        console.error('Error retrieving associated members:', err.message);
+        return res.status(500).json({ message: 'Error retrieving associated members' });
+      }
+
+      // Create an object that includes both user information and associated members
+      const userWithMembers = {
+        id: userRow.Id,
+        firstname: userRow.firstname,
+        lastname: userRow.lastname,
+        confirmation: userRow.confirmation,
+        members: membersRows, // Include the associated members
+      };
+
+      // Return the user information along with associated members as a JSON response
+      res.json(userWithMembers);
+    });
+  });
+});
+
+/**
+ * @swagger
+ * /get-all-files:
+ *   get:
+ *     summary: Get all files
+ *     description: Retrieve and serve a list of all files from the server's 'uploads' directory.
+ *     responses:
+ *       200:
+ *         description: File list retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: string
+ *                 format: binary
+ *                 description: List of file names in the 'uploads' directory.
+ *       403:
+ *         description: Forbidden, file access denied.
+ *       500:
+ *         description: Internal Server Error, error while retrieving file list.
+ */
+app.get('/get-all-files', verifyToken, (req, res) => {
+  fs.readdir(dir, (err, files) => {
+    if (err) {
+      console.error('Error reading directory:', err.message);
+      return res.status(500).json({ message: 'Error reading directory.' });
+    }
+
+    res.json(files);
+  });
+});
+
+/**
+ * @swagger
+ * /download-file:
+ *   get:
+ *     summary: Download a file
+ *     description: Download a specific file from the server's 'uploads' directory.
+ *     parameters:
+ *       - in: query
+ *         name: filename
+ *         required: true
+ *         description: The name of the file to download.
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: File downloaded successfully.
+ *         content:
+ *           application/octet-stream::
+ *             schema:
+ *               type: string
+ *               format: binary
+ *               description: The content of the requested file.
+ *       403:
+ *         description: Forbidden, file access denied.
+ *       404:
+ *         description: Not Found, requested file not found.
+ *       500:
+ *         description: Internal Server Error, error while serving the file.
+ */
+app.get('/download-file', verifyToken, (req, res) => {
+  const { filename } = req.query;
+  const filePath = path.join(dir, filename);
+
+  if (fs.existsSync(filePath)) {
+    res.download(filePath);
+  } else {
+    res.status(404).json({ message: 'File not found' });
+  }
+});
+
+/**
+ * @swagger
+ * /update-confirmation/{Id}:
  *   put:
- *     security:
- *       - BearerAuth: []
  *     summary: Update Confirmation value by user ID
  *     description: Update the Confirmation value (true/false) for a user based on their ID.
  *     parameters:
  *       - in: path
- *         name: id
+ *         name: Id
  *         description: User ID
  *         required: true
  *         schema:
@@ -198,9 +408,8 @@ app.post('/register-user', (req, res) => {
  *       500:
  *         description: Error updating Confirmation value
  */
-
-app.put('/update-confirmation/:id', verifyToken, (req, res) => {
-  const userId = req.params.id;
+app.put('/update-confirmation/:Id', verifyToken, (req, res) => {
+  const userId = req.params.Id;
   const { Confirmation } = req.body;
 
   // Ensure that Confirmation is a boolean, true, false
@@ -226,86 +435,291 @@ app.put('/update-confirmation/:id', verifyToken, (req, res) => {
 
 /**
  * @swagger
- * /get-all-users:
- *   get:
- *     summary: Get all users' firstname and lastname
- *     description: Retrieve the firstname and lastname of all users from the database.
+ * /upload:
+ *   post:
+ *     summary: Upload multiple images
+ *     description: Upload multiple images to the server.
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
  *     responses:
  *       200:
- *         description: Successfully retrieved user data.
+ *         description: Images uploaded successfully.
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   firstname:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   description: A success message.
+ *                 imageUrls:
+ *                   type: array
+ *                   items:
  *                     type: string
- *                     description: The user's firstname.
- *                   lastname:
- *                     type: string
- *                     description: The user's lastname.
+ *                   description: URLs of the uploaded images.
+ *       400:
+ *         description: No images uploaded.
  *       500:
- *         description: Error fetching user data from the database.
+ *         description: Error uploading images to the server.
  */
-app.get('/get-all-users', (req, res) => {
-   // Query the database to retrieve all users' firstname and lastname
-   db.all('SELECT firstname, lastname FROM User', (err, rows) => {
-     if (err) {
-       console.error('Error fetching users:', err.message);
-       res.status(500).json({ message: 'Error fetching users.' });
-     } else {
-       // Extract the firstname and lastname from the query result
-       const users = rows.map((row) => ({ firstname: row.firstname, lastname: row.lastname }));
-       res.json(users);
-     }
-   });
- });
+app.post('/upload', verifyToken, upload.array('files', 10), (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ message: 'No images uploaded' });
+  }
 
- // Define an endpoint to get user information by ID (requires JWT authentication)
+  // Specify the destination directory
+  const destinationDirectory = './uploads/';
+
+  // Create the destination directory if it doesn't exist
+  if (!fs.existsSync(destinationDirectory)) {
+    fs.mkdirSync(destinationDirectory, { recursive: true });
+  }
+
+  // Move each file to the destination directory
+  req.files.forEach((file) => {
+    const sourcePath = file.path;
+    const destinationPath = path.join(destinationDirectory, file.originalname);
+
+    fs.renameSync(sourcePath, destinationPath);
+  });
+
+  const imageUrls = req.files.map((file) => `/uploads/${file.originalname}`);
+  res.json({ message: 'Images uploaded successfully', imageUrls });
+});
+
 /**
  * @swagger
- * /user/{id}:
- *   get:
- *     summary: Get user information by ID
- *     description: Retrieve user information based on the user's ID.
+ * /add-members/{UserId}:
+ *   post:
+ *     summary: Add multiple members
+ *     description: Add multiple members to the userAddMembers table.
  *     parameters:
  *       - in: path
- *         name: id
- *         description: User ID
+ *         name: UserId
+ *         description: The ID of the user to associate the members with.
  *         required: true
  *         schema:
- *         type: integer
+ *           type: integer
+ *           example: 1
+ *     requestBody:
+ *       description: Array of members to add.
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             items:
+ *               type: object
+ *               properties:
+ *                 lastname:
+ *                   type: string
+ *                   description: The last name of the member.
+ *                 firstname:
+ *                   type: string
+ *                   description: The first name of the member.
+ *             example:
+ *               - lastname: Smith
+ *                 firstname: John
+ *               - lastname: Johnson
+ *                 firstname: Emily
  *     responses:
  *       200:
- *         description: User information retrieved successfully
- *       401:
- *         description: Unauthorized (Invalid or missing token)
- *       403:
- *         description: Forbidden (Token is not valid)
- *       404:
- *         description: User not found
+ *         description: Members added successfully.
+ *       400:
+ *         description: Invalid request format or missing fields.
  *       500:
- *         description: Error retrieving user information
+ *         description: Error adding members to the database.
  */
-app.get('/user/:id', (req, res) => {
-  const userId = req.params.id;
+app.post('/add-members/:UserId', verifyToken, (req, res) => {
+  const { UserId } = req.params;
+  const members = JSON.parse(JSON.stringify(req.body));
 
-  // Query the database to retrieve user information based on the ID
-  db.get('SELECT Id, firstname, lastname FROM User WHERE Id = ?', [userId], (err, row) => {
+  if (!members || !Array.isArray(members)) {
+    return res.status(400).json({ message: 'Invalid request format or missing fields' });
+  }
+
+  // Insert members into the userAddedMembers table with the common UserId
+  const values = members.map((member) => [UserId, member.lastname, member.firstname]);
+  let membersAddedCount = 0; // Track the number of members added
+
+  values.forEach((member) => {
+    db.run(
+      'INSERT INTO userAddedMembers (UserId, lastname, firstname) VALUES (?, ?, ?)',
+      member,
+      function (err) {
+        if (err) {
+          console.error('Error adding members to the database:', err.message);
+          return res.status(500).json({ message: 'Error adding members to the database' });
+        }
+
+        membersAddedCount++;
+
+        // Check if all members have been added
+        if (membersAddedCount === values.length) {
+          console.log(`Added ${membersAddedCount} members to the userAddMembers table`);
+          res.json({ message: 'Members added successfully' });
+        }
+      }
+    );
+  });
+});
+
+/**
+ * @swagger
+ * /delete-user/{Id}:
+ *   delete:
+ *     summary: Delete a user by ID
+ *     description: Delete a user from the database based on their ID.
+ *     parameters:
+ *       - in: path
+ *         name: Id
+ *         description: User ID to delete.
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: User deleted successfully.
+ *       401:
+ *         description: Unauthorized (Invalid or missing token).
+ *       404:
+ *         description: User not found.
+ *       500:
+ *         description: Error deleting user from the database.
+ */
+app.delete('/delete-user/:Id', verifyToken, (req, res) => {
+  const userId = req.params.Id;
+
+  // Check if the user with the specified ID exists
+  db.get('SELECT Id FROM User WHERE Id = ?', [userId], (err, row) => {
     if (err) {
-      console.error('Error retrieving user information:', err.message);
-      return res.status(500).json({ message: 'Error retrieving user information' });
+      console.error('Error checking user existence:', err.message);
+      return res.status(500).json({ message: 'Error deleting user from the database' });
     }
 
     if (!row) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Return the user information as a JSON response
-    res.json(row);
+    // User exists, proceed with the deletion
+    db.run('DELETE FROM User WHERE Id = ?', [userId], (err) => {
+      if (err) {
+        console.error('Error deleting user:', err.message);
+        return res.status(500).json({ message: 'Error deleting user from the database' });
+      }
+
+      res.json({ message: 'User deleted successfully' });
+    });
   });
+});
+
+/**
+ * @swagger
+ * /delete-members/{UserId}:
+ *   delete:
+ *     summary: Delete multiple members by User ID
+ *     description: Delete multiple members from the userAddedMembers table based on the User ID.
+ *     parameters:
+ *       - in: path
+ *         name: UserId
+ *         description: The ID of the user whose members to delete.
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       description: Array of members to delete.
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             items:
+ *               type: object
+ *               properties:
+ *                 memberIds:
+ *                   type: array
+ *                   description: An array of member IDs to delete.
+ *                   example: [1, 2, 3]
+ *     responses:
+ *       200:
+ *         description: Members deleted successfully.
+ *       400:
+ *         description: Invalid request format or missing fields.
+ *       500:
+ *         description: Error deleting members from the database.
+ */
+app.delete('/delete-members/:UserId', verifyToken, (req, res) => {
+  const { UserId } = req.params;
+  const { memberIds } = req.body;
+
+  if (!memberIds || !Array.isArray(memberIds)) {
+    return res.status(400).json({ message: 'Invalid request format or missing fields' });
+  }
+
+  // Convert member IDs to integers
+  const memberIdsInt = memberIds.map((id) => parseInt(id));
+
+  // Delete members from the userAddedMembers table based on User ID and member IDs
+  db.run(
+    'DELETE FROM userAddedMembers WHERE UserId = ? AND Id IN (?)',
+    [UserId, memberIdsInt],
+    function (err) {
+      if (err) {
+        console.error('Error deleting members from the database:', err.message);
+        return res.status(500).json({ message: 'Error deleting members from the database' });
+      }
+
+      console.log(`Deleted ${this.changes} members from the userAddedMembers table`);
+      res.json({ message: 'Members deleted successfully' });
+    }
+  );
+});
+
+/**
+ * @swagger
+ * /delete-file:
+ *   delete:
+ *     summary: Delete a file
+ *     description: Delete a specific file from the server's 'uploads' directory based on its filename.
+ *     parameters:
+ *       - in: query
+ *         name: filename
+ *         required: true
+ *         description: The name of the file to delete.
+ *         schema:
+ *           type: string
+ *     responses:
+ *       204:
+ *         description: File deleted successfully.
+ *       404:
+ *         description: Not Found, requested file not found.
+ *       500:
+ *         description: Internal Server Error, error while deleting the file.
+ */
+app.delete('/delete-file', verifyToken, (req, res) => {
+  const { filename } = req.query;
+  const filePath = path.join(dir, filename);
+
+  if (fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+      res.status(204).end();
+    } catch (err) {
+      console.error('Error deleting file:', err);
+      res.status(500).json({ message: 'Error deleting file' });
+    }
+  } else {
+    res.status(404).json({ message: 'File not found' });
+  }
 });
 
  app.get('/', (req, res) => {
