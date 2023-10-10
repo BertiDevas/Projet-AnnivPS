@@ -129,39 +129,181 @@ app.post('/authenticate-user', (req, res) => {
  *         description: User registered successfully
  *       400:
  *         description: Invalid request data
+ *       409:
+ *         description: User with the same name already or as member of another user
  *       500:
  *         description: Error registering user
  */
 app.post('/register-user', (req, res) => {
-   const { lastname, firstname, mdp, code } = req.body; 
-   if (code !== codeApp & code !== codeAdmin) {
-      res.status(400).json({ message: 'Invalid request data' });
-      } else {
+  const { lastname, firstname, mdp, code } = req.body; 
+  if (code !== codeApp && code !== codeAdmin) {
+     res.status(400).json({ message: 'Invalid request data' });
+  } else {
+    
+     // Check if a user with the same firstname and lastname already exists
+    db.get(
+      'SELECT * FROM User WHERE lastname = ? AND firstname = ?',
+      [lastname, firstname],
+      (err, existingUser) => {
+        if (err) {
+          console.error('Error checking for existing user:', err.message);
+          return res.status(500).json({ message: 'Error registering user.' });
+        }
 
-        isAdmin = false;
-        if (code === codeAdmin) isAdmin = true;
-         
-         // Generate a unique salt for the user
-         const salt = crypto.randomBytes(16).toString('hex');
+        if (existingUser) {
+          // If a user with the same firstname and lastname exists, return a 400 response
+          return res.status(409).json({ message: 'User with the same name already exists.' });
+        }
+
+        // Check if a member with the same firstname and lastname already exists
+        db.get(
+        'SELECT * FROM userAddedMembers WHERE lastname = ? AND firstname = ?',
+        [lastname, firstname],
+        (err, existingMember) => {
+          if (err) {
+            console.error('Error checking for existing member:', err.message);
+            return res.status(500).json({ message: 'Error registering user while checking for members.' });
+          }
       
-         // Hash the password with the salt
-         const hashedMdP = crypto.createHash('sha256').update(mdp + salt).digest('hex'); 
+          if (existingMember) {
+            // If a user with the same firstname and lastname exists as a member, return a 409 response
+            db.get(
+              'SELECT * FROM userAddedMembers WHERE Id = ?',
+              [existingMember.UserId],
+              (err, associatedUser) => {
+                if (err) {
+                  console.error('Error fetching associated user:', err.message);
+                  return res.status(500).json({ message: 'Error registering user while fetching associated user.' });
+                }
       
-         // Insert the user into the User table
-         db.run(
-         'INSERT INTO User (lastname, firstname, MdP, Salt, isAdmin) VALUES (?, ?, ?, ?, ?)',
-         [lastname, firstname, hashedMdP, salt, isAdmin],
-         (err) => {
-            if (err) {
-               console.error('Error registering user:', err.message);
-               res.status(500).json({ message: 'Error registering user.' });
-            } else {
-               console.log('User registered successfully');
-               res.json({ message: 'User registered successfully' });
-            }
-         });
+                if (associatedUser) {
+                  return res.status(409).json({
+                    message: 'Member with the same name already exists.',
+                    associatedUser: {
+                      firstname: associatedUser.firstname,
+                      lastname: associatedUser.lastname,
+                      id: associatedUser.id,
+                    },
+                  });
+                }
+              }
+            );
+          } else {
+            isAdmin = false;
+            if (code === codeAdmin) isAdmin = true;
+              
+            // Generate a unique salt for the user
+            const salt = crypto.randomBytes(16).toString('hex');
+        
+            // Hash the password with the salt
+            const hashedMdP = crypto.createHash('sha256').update(mdp + salt).digest('hex'); 
+        
+            // Insert the user into the User table
+            db.run(
+              'INSERT INTO User (lastname, firstname, MdP, Salt, isAdmin) VALUES (?, ?, ?, ?, ?)',
+              [lastname, firstname, hashedMdP, salt, isAdmin],
+              (err) => {
+                if (err) {
+                  console.error('Error registering user:', err.message);
+                  res.status(500).json({ message: 'Error registering user.' });
+                } else {
+                  console.log('User registered successfully');
+                  res.json({ message: 'User registered successfully' });
+                }
+              }
+            );
+          }
+        }
+      );
       }
- });
+    );
+  }
+});
+
+/**
+ * @swagger
+ * /change-password:
+ *   post:
+ *     summary: Change the password of a user
+ *     description: Change the password (mdp) of an existing user in the system.
+ *     requestBody:
+ *       description: User's information to change the password.
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstname:
+ *                 type: string
+ *               lastname:
+ *                 type: string
+ *               mdp:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *             example:
+ *               firstname: John
+ *               lastname: Doe
+ *               mdp: new_password
+ *               code: '0001'
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *       400:
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Error changing the password
+ */
+app.post('/change-password', (req, res) => {
+  const { firstname, lastname, mdp, code } = req.body;
+
+  // Check if user is authorized based on the code
+  if (code !== codeApp && code !== codeAdmin) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  // Check if the user with the provided firstname and lastname exists
+  db.get(
+    'SELECT Id, Salt FROM User WHERE firstname = ? AND lastname = ?',
+    [firstname, lastname],
+    (err, user) => {
+      if (err) {
+        console.error('Error checking for user:', err.message);
+        return res.status(500).json({ message: 'Error changing the password' });
+      }
+
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Generate a unique salt for the user
+      const salt = crypto.randomBytes(16).toString('hex');
+
+      // Hash the new password with the salt
+      const hashedMdP = crypto.createHash('sha256').update(mdp + salt).digest('hex');
+
+      // Update the user's password in the database
+      db.run(
+        'UPDATE User SET MdP = ?, Salt = ? WHERE Id = ?',
+        [hashedMdP, salt, user.Id],
+        (err) => {
+          if (err) {
+            console.error('Error changing the password:', err.message);
+            return res.status(500).json({ message: 'Error changing the password' });
+          }
+
+          console.log('Password changed successfully');
+          res.json({ message: 'Password changed successfully' });
+        }
+      );
+    }
+  );
+});
 
 /**
  * @swagger
