@@ -59,54 +59,78 @@ app.use(cors(corsOptions));
  *       500:
  *         description: Error authenticating user
  */
-app.post('/authenticate-user', (req, res) => {
+app.post('/authenticate-user', async (req, res) => {
+  const { lastname, mdpentered } = req.body;
 
-   const { lastname, mdpentered } = req.body;
-   // Retrieve the salt from the database for the user
-   db.get('SELECT id, Salt, mdp, isAdmin, isRegistered FROM User WHERE lastname = ?', [lastname], (err, row) => {
-      if (err) {
-         console.error('Error retrieving user:', err.message);
-         res.status(500).json({ message: 'Error authenticating user.' });
-      } else if (row) {
-         const { id, Salt, mdp: storedmdp, isAdmin, isRegistered } = row;
-
-        if (storedmdp == null || !isRegistered) {
-          res.status(401).json({ message: 'Authentication failed. (1) User exists but is not registered' });
+  try {
+    // Retrieve user information from the database
+    const rows = await new Promise((resolve, reject) => {
+      db.all('SELECT id, mdp, isAdmin, isRegistered FROM User WHERE lastname = ?', [lastname], (err, rows) => {
+        if (err) {
+          reject(err);
         } else {
+          resolve(rows);
+        }
+      });
+    });
 
-          bcrypt.compare(mdpentered, storedmdp, function(err, result) {
+    if (rows.length > 0) {
+      for (const row of rows) {
+        const { id, mdp: storedmdp, isAdmin, isRegistered } = row;
 
-          // Compare the hashed password with the stored hashed password
+        if (isRegistered && storedmdp !== null) {
+          const result = await new Promise((resolve, reject) => {
+            bcrypt.compare(mdpentered, storedmdp, (err, result) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(result);
+              }
+            });
+          });
+
           if (result) {
-
             const payload = {
               id,
             };
-            
-            // Define the payload for the JWT, including the admin claim
+
             if (isAdmin) {
               payload.isAdmin = true;
             }
-            
-            // Sign the JWT with the secret key
-            jwt.sign(payload, secretKey, { expiresIn: '24h' }, (err, token) => {
-              if (err) {
-                res.sendStatus(500);
-              } else {
-                // Include the token in the 'Authorization' header of the response
-                res.setHeader('Authorization', `Bearer ${token}`);
-                res.json({ authenticated: true, userId: id,
-                          Authorization: `Bearer ${token}`});
-              }
+
+            const token = await new Promise((resolve, reject) => {
+              jwt.sign(payload, secretKey, { expiresIn: '24h' }, (err, token) => {
+                if (err) {
+                  reject(err);
+                } else {
+                  resolve(token);
+                }
+              });
             });
-          } else {
-            res.status(401).json({ message: 'Authentication failed. (2)' });
-          }});
+
+            res.setHeader('Authorization', `Bearer ${token}`);
+            res.json({
+              authenticated: true,
+              userId: id,
+              Authorization: `Bearer ${token}`,
+            });
+
+            // Exit the loop after successful authentication
+            return;
+          }
         }
-      } else {
-        res.status(401).json({ message: 'Authentication failed. (3)' });
       }
-   });
+
+      // If none of the passwords matched
+      res.status(401).json({ message: 'Authentication failed. Incorrect password.' });
+    } else {
+      // No matching user found
+      res.status(401).json({ message: 'Authentication failed. User not found.' });
+    }
+  } catch (error) {
+    console.error('Error:', error.message);
+    res.status(500).json({ message: 'Internal server error.' });
+  }
 });
 
 /**
