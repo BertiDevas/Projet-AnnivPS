@@ -177,8 +177,8 @@ app.post('/register-user', (req, res) => {
      res.status(400).json({ message: 'Invalid code sent' });
   } else {
     
-    const formattedLastname = lastname.trim().replace('/\s+/g', ' ');
-    const formattedfirstname = firstname.trim().replace('/\s+/g', ' ');
+    const formattedLastname = lastname.trim().replace('/[\s-]+/g', ' ');
+    const formattedfirstname = firstname.trim().replace('/[\s-]+/g', ' ');
 
     db.get(
       'SELECT * FROM User WHERE LOWER(TRIM(lastname)) = LOWER(?) AND LOWER(TRIM(firstname)) = LOWER(?)',
@@ -274,8 +274,8 @@ app.post('/register-user', (req, res) => {
 app.post('/create-user', verifyToken, (req, res) => {
   const {idCreator, firstname, lastname, confirmation, confirmation_dej, confirmation_balade, confirmation_diner} = req.body;
 
-  const formattedLastname = lastname.trim().replace('/\s+/g', ' ');
-  const formattedfirstname = firstname.trim().replace('/\s+/g', ' ');
+  const formattedLastname = lastname.trim().replace('/[\s-]+/g', ' ');
+  const formattedfirstname = firstname.trim().replace('/[\s-]+/g', ' ');
 
   db.get(
     'SELECT * FROM User WHERE LOWER(TRIM(lastname)) = LOWER(?) AND LOWER(TRIM(firstname)) = LOWER(?)',
