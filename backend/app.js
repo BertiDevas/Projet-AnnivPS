@@ -177,10 +177,12 @@ app.post('/register-user', (req, res) => {
      res.status(400).json({ message: 'Invalid code sent' });
   } else {
     
-     // Check if a user with the same firstname and lastname already exists
+    const formattedLastname = lastname.trim().replace('/\s+/g', ' ');
+    const formattedfirstname = firstname.trim().replace('/\s+/g', ' ');
+
     db.get(
-      'SELECT * FROM User WHERE lastname = ? AND firstname = ?',
-      [lastname, firstname],
+      'SELECT * FROM User WHERE LOWER(TRIM(lastname)) = LOWER(?) AND LOWER(TRIM(firstname)) = LOWER(?)',
+      [formattedLastname, formattedfirstname],
       (err, existingUser) => {
         if (err) {
           console.error('Error checking for existing user:', err.message);
@@ -188,7 +190,7 @@ app.post('/register-user', (req, res) => {
         }
 
         if (existingUser) {
-          // If a user with the same firstname and lastname exists, return a 400 response
+          // If a user with the same firstname and lastname exists, return a 409 response
           return res.status(409).json({ message: 'User with the same name already exists.' });
         }
 
@@ -272,9 +274,12 @@ app.post('/register-user', (req, res) => {
 app.post('/create-user', verifyToken, (req, res) => {
   const {idCreator, firstname, lastname, confirmation, confirmation_dej, confirmation_balade, confirmation_diner} = req.body;
 
+  const formattedLastname = lastname.trim().replace('/\s+/g', ' ');
+  const formattedfirstname = firstname.trim().replace('/\s+/g', ' ');
+
   db.get(
-    'SELECT * FROM User WHERE lastname = ? AND firstname = ?',
-    [lastname, firstname],
+    'SELECT * FROM User WHERE LOWER(TRIM(lastname)) = LOWER(?) AND LOWER(TRIM(firstname)) = LOWER(?)',
+    [formattedLastname, formattedfirstname],
     (err, existingUser) => {
       if (err) {
         console.error('Error checking for existing user:', err.message);
