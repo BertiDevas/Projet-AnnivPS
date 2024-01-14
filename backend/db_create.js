@@ -27,13 +27,14 @@ const db = new sqlite3.Database('db.sql', (err) => {
       } else {
         console.log('User table created.');
         
-        db.all('SELECT id, idCreator, lastname, firstname, isRegistered, isAdmin, mdp FROM User', (err, rows) => {
+        db.all('SELECT * FROM User', (err, rows) => {
           if (err) {
             console.error('Error fetching users:', err.message);
           } else {
             console.log('All Users:');
             rows.forEach((row) => {
-              console.log(`ID: ${row.id}, ID Creator: ${row.idCreator}, Last Name: ${row.lastname}, First Name: ${row.firstname}, isRegistered: ${row.isRegistered}, isAdmin: ${row.isAdmin}, mdp: ${row.mdp}`);
+              console.log(`ID: ${row.id}, ID Creator: ${row.idCreator}, Last Name: ${row.lastname}, First Name: ${row.firstname}, isRegistered: ${row.isRegistered}, isAdmin: ${row.isAdmin}, 
+              confirmation: ${row.confirmation}, confirmation_dej: ${row.confirmation_dej}, confirmation_balade: ${row.confirmation_balade}, confirmation_diner: ${row.confirmation_diner}`);
             });
           }
         });
