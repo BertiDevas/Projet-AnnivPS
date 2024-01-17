@@ -299,7 +299,7 @@ app.post('/create-user', verifyToken, (req, res) => {
             console.error('Error creating user:', err.message);
             return res.status(500).json({ message: 'Error creating user' });
           } else {
-            console.log(new Date().toISOString() + " : User created successfully : " + id)
+            console.log(new Date().toISOString() + " : User created successfully : " + firstname + " " + lastname + " by " + idCreator)
             db.get('SELECT id FROM User WHERE lastname = ? AND firstname = ?', [lastname, firstname], (err, row) => {
               if (err) {
                 console.error('Error getting user id:', err.message);
@@ -388,7 +388,7 @@ app.post('/change-password', (req, res) => {
               return res.status(500).json({ message: 'Error changing the password' });
             }
   
-            console.log(new Date().toISOString() + " : Password changed successfully : " + id);
+            console.log(new Date().toISOString() + " : Password changed successfully : " + user.id);
             res.json({ message: 'Password changed successfully' });
           }
         );
