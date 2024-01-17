@@ -114,7 +114,7 @@ app.post('/authenticate-user', async (req, res) => {
               userId: id,
               Authorization: `Bearer ${token}`,
             });
-            console.log(str(Date.now()) + " Authentication Successful by " + id)
+            console.log(new Date().toISOString() + " : Authentication Successful by : " + id)
             // Exit the loop after successful authentication
             return;
           }
@@ -212,7 +212,7 @@ app.post('/register-user', (req, res) => {
                   console.error('Error registering user:', err.message);
                   res.status(500).json({ message: 'Error registering user.' });
                 } else {
-                  console.log(str(Date.now()) + " User registered successfully " + id)
+                  console.log(new Date().toISOString() + " : User registered successfully : " + id)
                   res.json({ message: 'User registered successfully' });
                 }
               }
@@ -299,7 +299,7 @@ app.post('/create-user', verifyToken, (req, res) => {
             console.error('Error creating user:', err.message);
             return res.status(500).json({ message: 'Error creating user' });
           } else {
-            console.log(str(Date.now()) + " User created successfully " + id)
+            console.log(new Date().toISOString() + " : User created successfully : " + id)
             db.get('SELECT id FROM User WHERE lastname = ? AND firstname = ?', [lastname, firstname], (err, row) => {
               if (err) {
                 console.error('Error getting user id:', err.message);
@@ -388,7 +388,7 @@ app.post('/change-password', (req, res) => {
               return res.status(500).json({ message: 'Error changing the password' });
             }
   
-            console.log('Password changed successfully');
+            console.log(new Date().toISOString() + " : Password changed successfully : " + id);
             res.json({ message: 'Password changed successfully' });
           }
         );
@@ -907,5 +907,5 @@ app.delete('/delete-file', verifyToken, (req, res) => {
 
  // Start the Express server
  app.listen(port, () => {
-   console.log(`Server is running on port ${port}`);
+   console.log(new Date().toISOString() + ` : Server is running on port ${port}`);
  });

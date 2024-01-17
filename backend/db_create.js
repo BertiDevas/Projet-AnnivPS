@@ -5,6 +5,7 @@ const db = new sqlite3.Database('db.sql', (err) => {
   if (err) {
     console.error('Error opening database:', err.message);
   } else {
+    console.log(new Date().toISOString() + " : Starting DB")
     console.log('Connected to the database.');
     
     // Create the User table if it doesn't exist
@@ -33,6 +34,7 @@ const db = new sqlite3.Database('db.sql', (err) => {
           } else {
             console.log('All Users:');
             rows.forEach((row) => {
+              
               console.log(`ID: ${row.id}, ID Creator: ${row.idCreator}, Last Name: ${row.lastname}, First Name: ${row.firstname}, isRegistered: ${row.isRegistered}, isAdmin: ${row.isAdmin}, 
               confirmation: ${row.confirmation}, confirmation_dej: ${row.confirmation_dej}, confirmation_balade: ${row.confirmation_balade}, confirmation_diner: ${row.confirmation_diner}`);
             });
