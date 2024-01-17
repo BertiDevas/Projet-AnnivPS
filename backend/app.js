@@ -212,7 +212,7 @@ app.post('/register-user', (req, res) => {
                   console.error('Error registering user:', err.message);
                   res.status(500).json({ message: 'Error registering user.' });
                 } else {
-                  console.log(new Date().toISOString() + " : User registered successfully : " + id)
+                  console.log(new Date().toISOString() + " : User registered successfully : " + lastname + " " + firstname)
                   res.json({ message: 'User registered successfully' });
                 }
               }
